@@ -17,8 +17,18 @@ interface OsirisMapProps {
   sweepData?: any;
   scanTargets?: any[];
   demoMode?: boolean;
-  theme?: 'core' | 'ghost';
+  spin?: boolean;
+  theme?: 'core' | 'ghost' | 'light';
 }
+
+// PYTHIA — forecast-ring color per horizon (24h red · week violet · month cyan · year grey)
+const PRED_COLOR: any = ['match', ['get', 'horizon'],
+  '24h', '#FF3D3D',
+  'week', '#9A7BFF',
+  'month', '#2DF5C8',
+  'year', '#9B978E',
+  '#9A7BFF',
+];
 
 function computeSolarTerminator(): [number, number][] {
   const now = new Date();
@@ -42,7 +52,7 @@ function computeSolarTerminator(): [number, number][] {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core' }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, spin = false, theme = 'core' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -117,7 +127,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       spinReq = requestAnimationFrame(frame);
     };
 
-    if (demoMode) {
+    if (demoMode || spin) {
       startSpinning();
     } else {
       isSpinning = false;
@@ -131,18 +141,21 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         clearInterval((window as any)._globeSpinTimer);
       }
     };
-  }, [mapReady, demoMode]);
+  }, [mapReady, demoMode, spin]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     
-    // Select basemap style
-    const styleUrl = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+    // Select basemap style — light theme uses CARTO Positron, dark-matter otherwise
+    // (theme switch remounts the map via key={theme} in page.tsx)
+    const styleUrl = theme === 'light'
+      ? 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+      : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleUrl,
-      center: [25.48, 42.70], zoom: 6.5, minZoom: 1.5, maxZoom: 18,
+      center: [25.48, 42.70], zoom: 6.5, minZoom: 1.5, maxZoom: 18, pitch: 0,
       attributionControl: false,
       maxPitch: 85,
       transformRequest: (url: string) => {
@@ -560,6 +573,105 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 1.2], 'text-allow-overlap': false,
       }, paint: { 'text-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
+
+      // ══ PYTHIA OVERLAY — new sources ══
+      ['nws-alerts', 'frontlines', 'displacement', 'economy', 'censorship', 'health', 'unrest',
+       'food', 'unemployment', 'gdp', 'poverty', 'hurricanes', 'flood']
+        .forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
+
+      // ── NWS storm/flood polygon zones ──
+      map.addLayer({ id: 'nws-fill', type: 'fill', source: 'nws-alerts', paint: {
+        'fill-color': ['match', ['get', 'severity'], 'Extreme', '#FF1744', 'Severe', '#FF3D3D', 'Moderate', '#FF9500', '#F9A825'],
+        'fill-opacity': 0.16,
+      }});
+      map.addLayer({ id: 'nws-outline', type: 'line', source: 'nws-alerts', paint: {
+        'line-color': ['match', ['get', 'severity'], 'Extreme', '#FF1744', 'Severe', '#FF3D3D', 'Moderate', '#FF9500', '#F9A825'],
+        'line-width': 1.2, 'line-opacity': 0.7,
+      }});
+
+      // ── Ukraine war front / territory control (DeepStateMap) ──
+      map.addLayer({ id: 'frontline-fill', type: 'fill', source: 'frontlines', paint: {
+        'fill-color': ['match', ['get', 'status'], 'occupied', '#D32F2F', 'contested', '#FF9500', '#8D6E63'],
+        'fill-opacity': 0.22,
+      }});
+      map.addLayer({ id: 'frontline-line', type: 'line', source: 'frontlines', paint: {
+        'line-color': ['match', ['get', 'status'], 'occupied', '#FF3D3D', 'contested', '#FF9500', '#8D6E63'],
+        'line-width': 1.2, 'line-opacity': 0.8,
+      }});
+
+      // ── Displacement — circles sized by people displaced ──
+      map.addLayer({ id: 'displacement-circles', type: 'circle', source: 'displacement', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'total'], 10000, 3, 1000000, 9, 8000000, 22],
+        'circle-color': '#FFB300', 'circle-opacity': 0.35, 'circle-blur': 0.3,
+        'circle-stroke-width': 1, 'circle-stroke-color': '#FFB300', 'circle-stroke-opacity': 0.6,
+      }});
+
+      // ── SOCIAL circle layers (keyless country-level signals) ──
+      const socialLayers: Array<[string, string, any]> = [
+        ['economy', '#EF5350', ['interpolate', ['linear'], ['coalesce', ['get', 'inflation'], 0], 0, 3, 20, 8, 80, 16]],
+        ['censorship', '#AB47BC', ['interpolate', ['linear'], ['coalesce', ['get', 'anomalies'], 0], 2000, 3, 50000, 8, 300000, 14]],
+        ['health', '#26C6DA', 6],
+        ['unrest', '#FF7043', 5],
+        ['food', '#FFCA28', ['interpolate', ['linear'], ['coalesce', ['get', 'people'], 0], 100000, 3, 5000000, 8, 30000000, 16]],
+        ['unemployment', '#78909C', ['interpolate', ['linear'], ['coalesce', ['get', 'unemployment'], 0], 0, 3, 15, 8, 35, 14]],
+        ['gdp', '#66BB6A', 5],
+        ['poverty', '#8D6E63', ['interpolate', ['linear'], ['coalesce', ['get', 'poverty'], 0], 0, 3, 25, 8, 70, 16]],
+      ];
+      socialLayers.forEach(([src, color, radius]) => {
+        map.addLayer({ id: `${src}-circles`, type: 'circle', source: src, paint: {
+          'circle-radius': radius, 'circle-color': color, 'circle-opacity': 0.4, 'circle-blur': 0.2,
+          'circle-stroke-width': 1, 'circle-stroke-color': color, 'circle-stroke-opacity': 0.6,
+        }});
+      });
+
+      // ── Hurricanes — NHC forecast cones (dashed red) + storm centers ──
+      map.addLayer({ id: 'hurr-cone-fill', type: 'fill', source: 'hurricanes',
+        filter: ['==', ['get', 'kind'], 'cone'],
+        paint: { 'fill-color': '#FF3D3D', 'fill-opacity': 0.1 }});
+      map.addLayer({ id: 'hurr-cone-line', type: 'line', source: 'hurricanes',
+        filter: ['==', ['get', 'kind'], 'cone'],
+        paint: { 'line-color': '#FF3D3D', 'line-width': 1.5, 'line-opacity': 0.8, 'line-dasharray': [2, 2] }});
+      map.addLayer({ id: 'hurr-center', type: 'circle', source: 'hurricanes',
+        filter: ['==', ['get', 'kind'], 'center'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 5, 5, 9],
+          'circle-color': '#FF3D3D', 'circle-opacity': 0.9,
+          'circle-stroke-width': 2, 'circle-stroke-color': '#FFF', 'circle-stroke-opacity': 0.7,
+        }});
+      map.addLayer({ id: 'hurr-label', type: 'symbol', source: 'hurricanes',
+        filter: ['==', ['get', 'kind'], 'center'],
+        layout: {
+          'text-field': ['get', 'name'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
+          'text-offset': [0, 1.6], 'text-allow-overlap': true,
+        }, paint: { 'text-color': '#FF3D3D', 'text-halo-color': '#000', 'text-halo-width': 1.5 }});
+
+      // ── Flood outlook — circles sized/shaded by GloFAS risk ratio (>=1.5 shown) ──
+      map.addLayer({ id: 'flood-circles', type: 'circle', source: 'flood', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'risk'], 1.5, 5, 3, 12, 6, 20],
+        'circle-color': ['interpolate', ['linear'], ['get', 'risk'], 1.5, '#4FC3F7', 2, '#2196F3', 4, '#7C4DFF'],
+        'circle-opacity': 0.5, 'circle-blur': 0.3,
+        'circle-stroke-width': 1.5, 'circle-stroke-color': '#4FC3F7', 'circle-stroke-opacity': 0.7,
+      }});
+
+      // ══ PYTHIA FORECAST RINGS — source added LAST so the future renders on top ══
+      map.addSource('pythia-preds', { type: 'geojson', data: EMPTY_FC });
+      map.addLayer({ id: 'pred-glow', type: 'circle', source: 'pythia-preds', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'probability'], 0, 12, 1, 34],
+        'circle-color': PRED_COLOR, 'circle-opacity': 0.12, 'circle-blur': 1,
+      }});
+      map.addLayer({ id: 'pred-ring', type: 'circle', source: 'pythia-preds', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 'probability'], 0, 8, 1, 26],
+        'circle-color': 'transparent', 'circle-opacity': 0,
+        'circle-stroke-width': 2, 'circle-stroke-color': PRED_COLOR, 'circle-stroke-opacity': 0.8,
+      }});
+      map.addLayer({ id: 'pred-core', type: 'circle', source: 'pythia-preds', paint: {
+        'circle-radius': 3.5, 'circle-color': PRED_COLOR, 'circle-opacity': 0.95,
+        'circle-stroke-width': 1, 'circle-stroke-color': '#000', 'circle-stroke-opacity': 0.6,
+      }});
+      map.addLayer({ id: 'pred-label', type: 'symbol', source: 'pythia-preds', layout: {
+        'text-field': ['get', 'pct'], 'text-size': 10, 'text-font': ['JetBrains Mono Bold', 'Open Sans Bold'],
+        'text-offset': [0, -2.2], 'text-allow-overlap': true,
+      }, paint: { 'text-color': PRED_COLOR, 'text-halo-color': '#000', 'text-halo-width': 1.5 }});
 
       setMapReady(true);
     });
@@ -1019,6 +1131,85 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       });
     });
 
+    // ══ PYTHIA — forecast-ring click: statement, reasoning, location + swarm-split warning ══
+    const PRED_HEX: Record<string, string> = { '24h': '#FF3D3D', week: '#9A7BFF', month: '#2DF5C8', year: '#9B978E' };
+    ['pred-ring', 'pred-core', 'pred-glow'].forEach(layer => {
+      map.on('click', layer, e => {
+        if (!e.features?.length) return;
+        const p = e.features[0].properties as any;
+        const coords = (e.features[0].geometry as any).coordinates;
+        const color = PRED_HEX[p.horizon] || '#9A7BFF';
+        const split = p.split === true || p.split === 'true';
+        popup(coords, `<div style="${pStyle}border:1px solid ${color}55;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span style="color:${color};font-size:10px;font-weight:700;letter-spacing:0.15em;">🔮 PYTHIA · ${htmlEsc((p.horizon || '').toUpperCase())}</span>
+            <span style="color:${color};font-size:14px;font-weight:700;">${htmlEsc(p.pct || '')}</span>
+          </div>
+          <div style="font-size:11px;color:#E8E6E0;line-height:1.45;margin-bottom:8px;">${htmlEsc(p.statement || '')}</div>
+          ${p.reasoning ? `<div style="font-size:9px;color:#9B978E;line-height:1.5;margin-bottom:8px;">${htmlEsc(p.reasoning)}</div>` : ''}
+          ${split ? `<div style="font-size:9px;color:#FF3D3D;margin-bottom:6px;">⚠ the swarm disagrees sharply on this forecast</div>` : ''}
+          ${p.location ? `<div style="font-size:9px;color:${color};">📍 ${htmlEsc(p.location)}</div>` : ''}
+        </div>`);
+      });
+    });
+
+    // ── Hurricanes (NHC storm centers + cones) ──
+    ['hurr-center', 'hurr-cone-fill'].forEach(layer => {
+      map.on('click', layer, e => {
+        if (!e.features?.length) return;
+        const p = e.features[0].properties as any;
+        const coords = e.lngLat;
+        popup([coords.lng, coords.lat], `<div style="${pStyle}border:1px solid rgba(255,61,61,0.4);">
+          <div style="color:#FF3D3D;font-size:12px;font-weight:700;margin-bottom:6px;">🌀 ${htmlEsc(p.name || p.storm || 'Tropical System')}</div>
+          <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">${htmlEsc(p.classification || 'Forecast cone — where the storm center is expected to track')}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;">
+            ${p.winds_kt ? `<div><span style="color:#5C5A54;">WINDS</span><br/><span style="color:#FF3D3D;">${htmlEsc(p.winds_kt)} kt</span></div>` : ''}
+            ${p.pressure_mb ? `<div><span style="color:#5C5A54;">PRESSURE</span><br/><span style="color:#E8E6E0;">${htmlEsc(p.pressure_mb)} mb</span></div>` : ''}
+          </div>
+          <a href="https://www.nhc.noaa.gov/" target="_blank" style="${linkStyle}color:#FF3D3D;border:1px solid rgba(255,61,61,0.4);background:rgba(255,61,61,0.1);">🌀 NHC</a>
+        </div>`);
+      });
+    });
+
+    // ── Flood outlook (GloFAS 30-day discharge vs recent median) ──
+    map.on('click', 'flood-circles', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(79,195,247,0.4);">
+        <div style="color:#4FC3F7;font-size:12px;font-weight:700;margin-bottom:6px;">🌊 ${htmlEsc(p.name || 'River Basin')}</div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">30-day flood outlook — forecast discharge vs recent median (GloFAS)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;">
+          <div><span style="color:#5C5A54;">RISK RATIO</span><br/><span style="color:#4FC3F7;font-weight:bold;">${htmlEsc(p.risk)}×</span></div>
+          <div><span style="color:#5C5A54;">PEAK DAY</span><br/><span style="color:#E8E6E0;">${htmlEsc(p.peak_day || '—')}</span></div>
+          <div><span style="color:#5C5A54;">PEAK FORECAST</span><br/><span style="color:#E8E6E0;">${htmlEsc(p.peak_forecast)} m³/s</span></div>
+          <div><span style="color:#5C5A54;">RECENT MEDIAN</span><br/><span style="color:#E8E6E0;">${htmlEsc(p.median_past)} m³/s</span></div>
+        </div>
+      </div>`);
+    });
+
+    // ── Generic label popups for the social / humanitarian country layers ──
+    ['displacement-circles', 'economy-circles', 'censorship-circles', 'health-circles', 'unrest-circles',
+     'food-circles', 'unemployment-circles', 'gdp-circles', 'poverty-circles'].forEach(layer => {
+      map.on('click', layer, e => {
+        if (!e.features?.length) return;
+        const p = e.features[0].properties as any;
+        const coords = (e.features[0].geometry as any).coordinates;
+        if (!p.label && !p.title) return;
+        popup(coords, `<div style="${pStyle}border:1px solid rgba(212,175,55,0.3);">
+          <div style="font-size:10px;color:#E8E6E0;line-height:1.5;">${htmlEsc(p.label || p.title)}</div>
+        </div>`);
+      });
+    });
+
+    // Hover cursor for the new clickables
+    ['pred-ring', 'pred-core', 'hurr-center', 'flood-circles', 'displacement-circles',
+     'economy-circles', 'censorship-circles', 'health-circles', 'unrest-circles',
+     'food-circles', 'unemployment-circles', 'gdp-circles', 'poverty-circles'].forEach(layer => {
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+    });
+
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
@@ -1346,9 +1537,100 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   }, [mapReady, setGeo]);
 
 
+  // ══ PYTHIA OVERLAY — data sync ══
+
+  // NWS storm/flood polygon zones
+  useEffect(() => {
+    if (!mapReady) return;
+    setGeo('nws-alerts', (activeLayers as any).nws && data.nws ? data.nws : []);
+  }, [mapReady, data.nws, (activeLayers as any).nws, setGeo]);
+
+  // Ukraine frontlines (territory polygons)
+  useEffect(() => {
+    if (!mapReady) return;
+    setGeo('frontlines', (activeLayers as any).frontlines && data.frontlines ? data.frontlines : []);
+  }, [mapReady, data.frontlines, (activeLayers as any).frontlines, setGeo]);
+
+  // Displacement + social country layers (all pre-built GeoJSON features)
+  useEffect(() => {
+    if (!mapReady) return;
+    const al = activeLayers as any;
+    (['displacement', 'economy', 'censorship', 'health', 'unrest', 'food', 'unemployment', 'gdp', 'poverty'] as const)
+      .forEach(k => setGeo(k, al[k] && data[k] ? data[k] : []));
+  }, [mapReady, data.displacement, data.economy, data.censorship, data.health, data.unrest,
+      data.food, data.unemployment, data.gdp, data.poverty, activeLayers, setGeo]);
+
+  // Hurricanes — NHC cones + centers
+  useEffect(() => {
+    if (!mapReady) return;
+    setGeo('hurricanes', (activeLayers as any).hurricanes && data.hurricanes ? data.hurricanes : []);
+  }, [mapReady, data.hurricanes, (activeLayers as any).hurricanes, setGeo]);
+
+  // Flood outlook — GloFAS basins, risk >= 1.5 shown
+  useEffect(() => {
+    if (!mapReady) return;
+    const basins = ((activeLayers as any).flood && data.flood) ? data.flood : [];
+    setGeo('flood', basins
+      .filter((b: any) => (b.risk || 0) >= 1.5)
+      .map((b: any) => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
+        properties: { name: b.name, risk: b.risk, peak_forecast: b.peak_forecast, median_past: b.median_past, peak_day: b.peak_day },
+      })));
+  }, [mapReady, data.flood, (activeLayers as any).flood, setGeo]);
+
+  // PYTHIA forecast rings — filtered to 24h + week ("next 7 days") unless predictions_all
+  useEffect(() => {
+    if (!mapReady) return;
+    const al = activeLayers as any;
+    const preds = (al.predictions && data.pythia_predictions) ? data.pythia_predictions : [];
+    const horizons = al.predictions_all ? ['24h', 'week', 'month', 'year'] : ['24h', 'week'];
+    setGeo('pythia-preds', preds
+      .filter((p: any) => p.lat != null && p.lng != null && horizons.includes(p.horizon))
+      .map((p: any) => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        properties: {
+          id: p.id, statement: p.statement, horizon: p.horizon,
+          probability: p.probability, pct: `${Math.round((p.probability || 0) * 100)}%`,
+          reasoning: p.reasoning || '', location: p.location || '', split: !!p.split,
+        },
+      })));
+  }, [mapReady, data.pythia_predictions, (activeLayers as any).predictions, (activeLayers as any).predictions_all, setGeo]);
+
+  // PYTHIA forecast rings — rAF loop pulses ring/glow opacity
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    let raf = 0;
+    const pulse = (t: number) => {
+      const k = (Math.sin(t / 600) + 1) / 2;               // 0..1
+      try {
+        if (map.getLayer('pred-ring')) map.setPaintProperty('pred-ring', 'circle-stroke-opacity', 0.45 + 0.45 * k);
+        if (map.getLayer('pred-glow')) map.setPaintProperty('pred-glow', 'circle-opacity', 0.06 + 0.14 * k);
+      } catch { /* style mid-swap */ }
+      raf = requestAnimationFrame(pulse);
+    };
+    raf = requestAnimationFrame(pulse);
+    return () => cancelAnimationFrame(raf);
+  }, [mapReady]);
+
   // Visibility
   useEffect(() => {
     if (!mapReady) return;
+    const al = activeLayers as any;
+    setVis(['nws-fill','nws-outline'], al.nws);
+    setVis(['frontline-fill','frontline-line'], al.frontlines);
+    setVis(['displacement-circles'], al.displacement);
+    setVis(['economy-circles'], al.economy);
+    setVis(['censorship-circles'], al.censorship);
+    setVis(['health-circles'], al.health);
+    setVis(['unrest-circles'], al.unrest);
+    setVis(['food-circles'], al.food);
+    setVis(['unemployment-circles'], al.unemployment);
+    setVis(['gdp-circles'], al.gdp);
+    setVis(['poverty-circles'], al.poverty);
+    setVis(['hurr-cone-fill','hurr-cone-line','hurr-center','hurr-label'], al.hurricanes);
+    setVis(['flood-circles'], al.flood);
+    setVis(['pred-glow','pred-ring','pred-core','pred-label'], al.predictions);
     setVis(['eq-circles','eq-label'], activeLayers.earthquakes);
     const anySat = activeLayers.satellites || (activeLayers as any).sat_comms || (activeLayers as any).sat_military || (activeLayers as any).sat_navigation || (activeLayers as any).sat_earth || (activeLayers as any).sat_science;
     setVis(['sat-glow','sat-dots'], anySat);
@@ -1481,7 +1763,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     try {
       (map as any).setProjection({ type: projection });
       if (projection === 'globe') {
-        map.easeTo({ pitch: 20, duration: 1200 });
+        map.easeTo({ pitch: 0, duration: 1200 });
         try {
           (map as any).setSky({
             'sky-color': '#04040A',

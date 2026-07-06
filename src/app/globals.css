@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Doto:wght@400;600;700;900&display=swap');
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -61,7 +61,10 @@
 
   /* ── Fonts ── */
   --font-hud: 'JetBrains Mono', 'Courier New', monospace;
-  --font-body: 'Inter', -apple-system, sans-serif;
+  /* PYTHIA — Doto dot-matrix display/body font */
+  --font-doto: 'Doto', 'Inter', -apple-system, sans-serif;
+  --font-display: 'Doto', 'Inter', -apple-system, sans-serif;
+  --font-body: 'Doto', 'Inter', -apple-system, sans-serif;
 
   /* ── Spacing (responsive) ── */
   --panel-gap: 12px;
@@ -115,6 +118,72 @@ body.theme-ghost {
   --scrollbar-thumb: rgba(179, 136, 255, 0.25);
   --scrollbar-thumb-hover: rgba(179, 136, 255, 0.5);
   --hover-accent: rgba(179, 136, 255, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THEME: PYTHIA LIGHT (SOFT-APPLE WHITES / GREYS, FROSTED GLASS)
+   ═══════════════════════════════════════════════════════════════ */
+body.theme-light {
+  --gold-rgb: 124, 92, 255;
+  --cyan-rgb: 0, 152, 148;
+  --bg-void: #F2F2F7;
+  --bg-primary: #F7F7FA;
+  --bg-secondary: #EDEDF2;
+  --bg-tertiary: #E4E4EA;
+  --bg-panel: rgba(255, 255, 255, 0.72);
+  --bg-panel-solid: #FFFFFF;
+
+  --gold-primary: #7C5CFF;
+  --gold-light: #9E85FF;
+  --gold-dim: #5A43C4;
+  --gold-glow: rgba(124, 92, 255, 0.22);
+
+  --cyan-primary: #009894;
+  --cyan-dim: #00706C;
+  --cyan-glow: rgba(0, 152, 148, 0.14);
+
+  --alert-red: #E03131;
+  --alert-orange: #E8590C;
+  --alert-green: #2B8A3E;
+  --alert-blue: #1971C2;
+
+  --border-primary: rgba(60, 60, 67, 0.18);
+  --border-secondary: rgba(60, 60, 67, 0.1);
+  --border-active: rgba(124, 92, 255, 0.45);
+  --border-cyan: rgba(0, 152, 148, 0.25);
+
+  --text-primary: #1C1C1E;
+  --text-secondary: #48484A;
+  --text-muted: #8E8E93;
+  --text-heading: #111113;
+  --text-gold: #7C5CFF;
+  --text-cyan: #009894;
+
+  --scrollbar-thumb: rgba(60, 60, 67, 0.22);
+  --scrollbar-thumb-hover: rgba(60, 60, 67, 0.4);
+  --hover-accent: rgba(60, 60, 67, 0.06);
+}
+
+body.theme-light .glass-panel {
+  background: var(--bg-panel);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+/* PYTHIA — display font helper (Doto dot-matrix) */
+.pythia-display {
+  font-family: var(--font-display);
+}
+
+/* PYTHIA — bottom world-headline ticker background */
+.pythia-ticker-bg {
+  background: rgba(4, 4, 10, 0.9) !important;
+}
+body.theme-light .pythia-ticker-bg {
+  background: rgba(255, 255, 255, 0.88) !important;
 }
 
 @theme inline {

@@ -4,8 +4,7 @@ import { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane, Satellite, Sun, AlertTriangle, Camera,
-  CloudLightning, Ship, Network, Database, Ghost,
-  Flame, Tv, Radio, Mountain, Anchor, Radar
+  CloudLightning, Ship, Network, Eye, Users
 } from 'lucide-react';
 
 interface LayerPanelProps {
@@ -13,17 +12,16 @@ interface LayerPanelProps {
   activeLayers: any;
   setActiveLayers: React.Dispatch<React.SetStateAction<any>>;
   isMobile?: boolean;
-  theme?: 'core' | 'ghost';
-  setTheme?: (theme: 'core' | 'ghost') => void;
 }
 
 const LAYER_GROUPS = [
   {
-    label: 'SDK',
-    fullLabel: 'OSIRIS SDK',
-    icon: Database,
+    label: 'ORACLE',
+    fullLabel: 'PYTHIA FORECAST',
+    icon: Eye,
     layers: [
-      { key: 'sdk_sea', label: 'Maritime Lines', dataKey: 'sdk_entities' },
+      { key: 'predictions', label: 'Forecast Rings (7 Days)', dataKey: 'pythia_predictions' },
+      { key: 'predictions_all', label: '+ Month / Year Rings', dataKey: '' },
     ],
   },
   {
@@ -65,7 +63,8 @@ const LAYER_GROUPS = [
     layers: [
       { key: 'cctv', label: 'CCTV Cameras', dataKey: 'cameras' },
       { key: 'live_news', label: 'Live News Feeds', dataKey: 'live_feeds' },
-      { key: 'news_intel', label: 'SIGINT News', dataKey: 'sigint_news' },
+      { key: 'news_intel', label: 'News Intel', dataKey: 'news' },
+      { key: 'balloons', label: 'Recon Balloons', dataKey: 'balloons' },
     ],
   },
   {
@@ -76,6 +75,9 @@ const LAYER_GROUPS = [
       { key: 'earthquakes', label: 'Earthquakes', dataKey: 'earthquakes' },
       { key: 'fires', label: 'Active Fires', dataKey: 'fires' },
       { key: 'weather', label: 'Severe Weather', dataKey: 'weather_events' },
+      { key: 'nws', label: 'Storm / Flood Zones', dataKey: 'nws' },
+      { key: 'hurricanes', label: 'Hurricane Cones (NHC)', dataKey: 'hurricanes' },
+      { key: 'flood', label: 'Flood Outlook (30d)', dataKey: 'flood' },
     ],
   },
   {
@@ -86,6 +88,25 @@ const LAYER_GROUPS = [
       { key: 'infrastructure', label: 'Nuclear Facilities', dataKey: 'infrastructure' },
       { key: 'global_incidents', label: 'Global Incidents', dataKey: 'gdelt' },
       { key: 'gps_jamming', label: 'GPS Jamming', dataKey: 'gps_jamming' },
+      { key: 'conflict_zones', label: 'Conflict / War Zones', dataKey: '' },
+      { key: 'frontlines', label: 'War Front / Territory', dataKey: 'frontlines' },
+      { key: 'radiation', label: 'Radiation Monitors', dataKey: 'radiation' },
+    ],
+  },
+  {
+    label: 'SOCIAL',
+    fullLabel: 'SOCIAL SIGNALS',
+    icon: Users,
+    layers: [
+      { key: 'displacement', label: 'Displacement', dataKey: 'displacement' },
+      { key: 'health', label: 'Disease Outbreaks', dataKey: 'health' },
+      { key: 'economy', label: 'Inflation', dataKey: 'economy' },
+      { key: 'censorship', label: 'Censorship', dataKey: 'censorship' },
+      { key: 'unrest', label: 'Civil Unrest', dataKey: 'unrest' },
+      { key: 'food', label: 'Food Insecurity', dataKey: 'food' },
+      { key: 'unemployment', label: 'Unemployment', dataKey: 'unemployment' },
+      { key: 'gdp', label: 'GDP Growth', dataKey: 'gdp' },
+      { key: 'poverty', label: 'Extreme Poverty', dataKey: 'poverty' },
     ],
   },
   {
@@ -138,7 +159,7 @@ function ToggleSwitch({ active, onClick }: { active: boolean; onClick: () => voi
   );
 }
 
-function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'core', setTheme }: LayerPanelProps) {
+function LayerPanel({ data, activeLayers, setActiveLayers, isMobile }: LayerPanelProps) {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
   const toggle = (key: string) => setActiveLayers((prev: any) => ({ ...prev, [key]: !prev[key] }));
@@ -192,23 +213,6 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
             </div>
           </div>
         ))}
-
-        {/* MOBILE GHOST TOGGLE */}
-        {setTheme && (
-          <div className="flex items-center justify-between mt-2 pt-3 border-t border-white/[0.06] px-1">
-            <span className="text-[9px] font-mono tracking-[0.2em] text-white/25 uppercase">Ghost Protocol</span>
-            <button
-              onClick={() => setTheme(theme === 'core' ? 'ghost' : 'core')}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all"
-              style={{
-                background: theme === 'ghost' ? 'rgba(179, 136, 255, 0.15)' : 'transparent',
-                boxShadow: theme === 'ghost' ? '0 0 12px rgba(179, 136, 255, 0.3)' : 'none',
-              }}
-            >
-              <Ghost className="w-4 h-4" style={{ color: theme === 'ghost' ? '#B388FF' : 'rgba(255,255,255,0.25)' }} />
-            </button>
-          </div>
-        )}
       </div>
     );
   }
@@ -313,30 +317,6 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
         })}
       </div>
 
-      {/* Subtle separator */}
-      <div className="w-5 h-px bg-white/[0.06] my-2" />
-
-      {/* Ghost Protocol Toggle */}
-      {setTheme && (
-        <button
-          onClick={() => setTheme(theme === 'core' ? 'ghost' : 'core')}
-          className="w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-500 cursor-pointer"
-          style={{
-            background: theme === 'ghost' ? 'rgba(179, 136, 255, 0.1)' : 'transparent',
-          }}
-          title="Ghost Protocol"
-        >
-          <Ghost
-            className="transition-all duration-500"
-            style={{
-              width: 15,
-              height: 15,
-              color: theme === 'ghost' ? '#B388FF' : 'rgba(255,255,255,0.15)',
-              filter: theme === 'ghost' ? 'drop-shadow(0 0 6px rgba(179, 136, 255, 0.5))' : 'none',
-            }}
-          />
-        </button>
-      )}
     </motion.div>
   );
 }

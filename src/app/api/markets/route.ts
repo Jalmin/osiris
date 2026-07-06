@@ -17,12 +17,11 @@ const INDEX_TICKERS = ['ES=F', 'NQ=F'];
 async function fetchYahoo(symbol: string): Promise<any | null> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
+    // NOTE: no browser User-Agent here — Yahoo 429s "browser" UAs that arrive
+    // without cookies; a plain server-side fetch passes.
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-      },
+      headers: { 'Accept': 'application/json' },
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -46,11 +45,10 @@ async function fetchYahoo(symbol: string): Promise<any | null> {
 async function fetchYahooV6(symbol: string): Promise<any | null> {
   try {
     const url = `https://query2.finance.yahoo.com/v6/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+    // NOTE: no browser User-Agent (see fetchYahoo above)
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      },
+      headers: { 'Accept': 'application/json' },
     });
     if (!res.ok) return null;
     const data = await res.json();

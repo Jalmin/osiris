@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, BarChart3, Newspaper, Search, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Activity, Database, Wifi, Play, Network, Crosshair } from 'lucide-react';
+import { Layers, BarChart3, Newspaper, Search, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Activity, Database, Wifi, Play, Network, Crosshair, Eye, MessageSquare, Sun, RotateCw, Info } from 'lucide-react';
 import IntelFeed from '@/components/IntelFeed';
 import MarketsPanel from '@/components/MarketsPanel';
 import ScmPanel from '@/components/ScmPanel';
@@ -15,6 +15,12 @@ import ViewPresets from '@/components/ViewPresets';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
+import PythiaStatus from '@/components/PythiaStatus';
+import CreditsModal from '@/components/CreditsModal';
+import FloatingWindow from '@/components/FloatingWindow';
+import ChatBox from '@/components/ChatBox';
+import HeadlineTicker from '@/components/HeadlineTicker';
+import SplashScreen from '@/components/SplashScreen';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
@@ -22,6 +28,10 @@ const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
 const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const EntityGraphPanel = dynamic(() => import('@/components/EntityGraphPanel'));
 const TokenPanel = dynamic(() => import('@/components/TokenPanel'));
+const PythiaPanel = dynamic(() => import('@/components/PythiaPanel'), { ssr: false });
+
+/** PYTHIA — floating window descriptor (chat with the oracle / news feeds) */
+type FloatWin = { id: string; kind: 'chat' | 'feed'; title: string; url?: string; z: number };
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -100,7 +110,7 @@ export default function Dashboard() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
-  const [showLayers, setShowLayers] = useState(true);
+  const [showLayers, setShowLayers] = useState(false); // PYTHIA: left Layers bar defaults off
   const [showMarkets, setShowMarkets] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [showScmPanel, setShowScmPanel] = useState(true);
@@ -108,17 +118,57 @@ export default function Dashboard() {
   const [showEntityGraph, setShowEntityGraph] = useState(false);
   const [showDesktopSearch, setShowDesktopSearch] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|null>(null);
+  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|'alerts'|null>(null);
   const [mapProjection, setMapProjection] = useState<'globe'|'mercator'>('globe');
   const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
   const [sweepData, setSweepData] = useState<any>(null);
   const [scanTargets, setScanTargets] = useState<any[]>([]);
   const [entityGraphTarget, setEntityGraphTarget] = useState<{ type: string; id: string; label?: string; properties?: Record<string, any> } | null>(null);
   const [demoMode, setDemoMode] = useState(false);
-  const [osirisTheme, setOsirisTheme] = useState<'core'|'ghost'>('core');
+  // PYTHIA — light/dark theme, persisted to localStorage as `pythia-theme`
+  const [osirisTheme, setOsirisTheme] = useState<'core'|'light'>('core');
+  // PYTHIA — globe spin, oracle deck, credits, floating windows
+  const [globeSpin, setGlobeSpin] = useState(false);
+  const [showPythia, setShowPythia] = useState(true);
+  const [showCredits, setShowCredits] = useState(false);
+  const [floatWins, setFloatWins] = useState<FloatWin[]>([]);
+  const nextZ = useRef(700);
+
+  const focusWin = useCallback((id: string) => {
+    nextZ.current += 1;
+    const z = nextZ.current;
+    setFloatWins(wins => wins.map(w => (w.id === id ? { ...w, z } : w)));
+  }, []);
+  const closeWin = useCallback((id: string) => {
+    setFloatWins(wins => wins.filter(w => w.id !== id));
+  }, []);
+  const openChatWindow = useCallback(() => {
+    setFloatWins(wins => {
+      if (wins.some(w => w.kind === 'chat')) return wins;
+      nextZ.current += 1;
+      return [...wins, { id: 'pythia-chat', kind: 'chat', title: 'ASK THE ORACLE', z: nextZ.current }];
+    });
+  }, []);
+  const openFeedWindow = useCallback((url: string, name: string) => {
+    setFloatWins(wins => {
+      nextZ.current += 1;
+      const id = `feed-${url}`;
+      if (wins.some(w => w.id === id)) return wins.map(w => (w.id === id ? { ...w, z: nextZ.current } : w));
+      return [...wins, { id, kind: 'feed', title: name || 'LIVE FEED', url, z: nextZ.current }];
+    });
+  }, []);
+
+  // Restore persisted theme
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pythia-theme');
+      if (saved === 'light' || saved === 'core') setOsirisTheme(saved);
+    } catch { /* private mode */ }
+  }, []);
 
   useEffect(() => {
     document.body.className = osirisTheme === 'core' ? '' : `theme-${osirisTheme}`;
+    try { localStorage.setItem('pythia-theme', osirisTheme); } catch { /* private mode */ }
   }, [osirisTheme]);
 
   const isMobile = useIsMobile();
@@ -159,6 +209,23 @@ export default function Dashboard() {
     sdk_naval: true,
     terrain_3d: false,
     malware: false,
+    // ── PYTHIA overlay layers ──
+    predictions: true,        // forecast rings (24h + week)
+    predictions_all: false,   // + month / year rings
+    hurricanes: true,         // NHC forecast cones
+    flood: true,              // GloFAS 30-day flood outlook
+    nws: false,               // NWS storm/flood polygon zones
+    frontlines: false,        // Ukraine territory control
+    conflict_zones: true,     // conflict / war zone markers
+    displacement: false,
+    health: false,
+    economy: false,
+    censorship: false,
+    unrest: false,
+    food: false,
+    unemployment: false,
+    gdp: false,
+    poverty: false,
   });
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
@@ -366,6 +433,24 @@ export default function Dashboard() {
     };
   }, [fetchEndpoint]);
 
+  // ── PYTHIA FORECAST RINGS — poll the engine (once on load + every 30s) ──
+  useEffect(() => {
+    const load = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const res = await fetch('/api/engine/predictions', { cache: 'no-store' });
+        if (!res.ok) return;
+        const j = await res.json();
+        const preds = Array.isArray(j) ? j : (j.predictions || []);
+        dataRef.current = { ...dataRef.current, pythia_predictions: preds };
+        setDataVersion(v => v + 1);
+      } catch { /* engine offline — rings simply stay empty */ }
+    };
+    load();
+    const iv = setInterval(load, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
   // ── LAYER-AWARE DATA LOADING — only fetch when layer is toggled ON ──
   const layerFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -452,6 +537,42 @@ export default function Dashboard() {
       layerFetchedRef.current.add('malware');
     }
 
+    // ── PYTHIA hazard layers ──
+    if (activeLayers.hurricanes && !layerFetchedRef.current.has('hurricanes')) {
+      fetchEndpoint('/api/hurricanes', d => ({ hurricanes: d.features || [] }));
+      layerFetchedRef.current.add('hurricanes');
+    }
+    if (activeLayers.flood && !layerFetchedRef.current.has('flood')) {
+      fetchEndpoint('/api/flood-outlook', d => ({ flood: d.basins || [] }));
+      layerFetchedRef.current.add('flood');
+    }
+    if (activeLayers.nws && !layerFetchedRef.current.has('nws')) {
+      fetchEndpoint('/api/nws-alerts', d => ({ nws: d.features || [] }));
+      layerFetchedRef.current.add('nws');
+    }
+    if (activeLayers.frontlines && !layerFetchedRef.current.has('frontlines')) {
+      fetchEndpoint('/api/frontlines', d => ({ frontlines: d.features || [] }));
+      layerFetchedRef.current.add('frontlines');
+    }
+
+    // ── PYTHIA social / humanitarian layers (all keyless GeoJSON) ──
+    const socialEndpoints: Array<[keyof typeof activeLayers, string]> = [
+      ['displacement', '/api/displacement'],
+      ['health', '/api/health-outbreaks'],
+      ['economy', '/api/economy'],
+      ['censorship', '/api/censorship'],
+      ['unrest', '/api/unrest'],
+      ['food', '/api/food-security'],
+      ['unemployment', '/api/unemployment'],
+      ['gdp', '/api/gdp-growth'],
+      ['poverty', '/api/poverty'],
+    ];
+    for (const [key, url] of socialEndpoints) {
+      if ((activeLayers as any)[key] && !layerFetchedRef.current.has(key as string)) {
+        fetchEndpoint(url, d => ({ [key]: d.features || [] }));
+        layerFetchedRef.current.add(key as string);
+      }
+    }
 
   }, [activeLayers]);
 
@@ -565,199 +686,10 @@ export default function Dashboard() {
   return (
     <main className="fixed inset-0 w-full h-full bg-[var(--bg-void)] overflow-hidden">
 
-      {/* ── SPLASH ── */}
+      {/* ── SPLASH — PYTHIA veins-around-the-eye load screen ── */}
       <AnimatePresence>
-        {showSplash && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.8, ease: 'easeInOut' }}
-            className="absolute inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden"
-            style={{ background: 'radial-gradient(ellipse at center, #0a0a14 0%, var(--bg-void) 70%)' }}
-          >
-            {/* ── Scanline CRT overlay ── */}
-            <div className="absolute inset-0 pointer-events-none z-[1]" style={{
-              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(212,175,55,0.015) 2px, rgba(212,175,55,0.015) 4px)',
-              animation: 'splashScanDrift 8s linear infinite',
-            }} />
-
-            {/* ── V4.2 badge — top-left ── */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              transition={{ delay: 0.8, duration: 0.5 }}
-              className="absolute top-6 left-6 z-[2] font-mono text-[10px] tracking-[0.3em] text-[var(--gold-primary)]"
-            >
-              V4.2
-            </motion.div>
-
-
-
-            {/* ── Geometric tactical logo ── */}
-            <div className="relative w-40 h-40 mb-8 flex items-center justify-center z-[2]">
-              {/* Outer ring — slow clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.6, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: 360 }}
-                transition={{ opacity: { duration: 0.6 }, scale: { duration: 0.8, ease: 'easeOut' }, rotate: { duration: 20, repeat: Infinity, ease: 'linear' } }}
-                className="absolute inset-0 rounded-full"
-                style={{ border: '1px solid rgba(212,175,55,0.2)' }}
-              >
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full" style={{ background: 'var(--gold-primary)', boxShadow: '0 0 12px var(--gold-primary), 0 0 24px rgba(212,175,55,0.3)' }} />
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-1 h-1 rounded-full" style={{ background: 'rgba(212,175,55,0.5)', boxShadow: '0 0 6px rgba(212,175,55,0.3)' }} />
-              </motion.div>
-
-              {/* Middle ring — faster counter-clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.4, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: -360 }}
-                transition={{ opacity: { duration: 0.6, delay: 0.15 }, scale: { duration: 0.8, delay: 0.15, ease: 'easeOut' }, rotate: { duration: 12, repeat: Infinity, ease: 'linear' } }}
-                className="absolute rounded-full"
-                style={{ inset: '18px', border: '1px solid rgba(0,229,255,0.15)' }}
-              >
-                <div className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--cyan-primary)', boxShadow: '0 0 10px var(--cyan-primary), 0 0 20px rgba(0,229,255,0.2)' }} />
-                <div className="absolute bottom-0 left-1/4 translate-y-1/2 w-1 h-1 rounded-full" style={{ background: 'rgba(0,229,255,0.4)' }} />
-              </motion.div>
-
-              {/* Inner ring — fastest clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.2, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: 360 }}
-                transition={{ opacity: { duration: 0.6, delay: 0.3 }, scale: { duration: 0.8, delay: 0.3, ease: 'easeOut' }, rotate: { duration: 7, repeat: Infinity, ease: 'linear' } }}
-                className="absolute rounded-full"
-                style={{ inset: '40px', border: '1px solid rgba(212,175,55,0.25)' }}
-              >
-                <div className="absolute top-0 left-1/4 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--gold-primary)', boxShadow: '0 0 8px var(--gold-primary)' }} />
-              </motion.div>
-
-              {/* Core circle + crosshair */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-                className="relative w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ border: '2px solid var(--gold-primary)', boxShadow: '0 0 20px rgba(212,175,55,0.15), inset 0 0 20px rgba(212,175,55,0.05)' }}
-              >
-                <motion.div
-                  animate={{ opacity: [0.3, 0.8, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  className="w-5 h-5 rounded-full"
-                  style={{ background: 'radial-gradient(circle, rgba(212,175,55,0.4) 0%, rgba(212,175,55,0.05) 70%)' }}
-                />
-                {/* Crosshair lines */}
-                <div className="absolute w-[1px] h-full" style={{ background: 'linear-gradient(to bottom, transparent, rgba(212,175,55,0.3), transparent)' }} />
-                <div className="absolute w-full h-[1px]" style={{ background: 'linear-gradient(to right, transparent, rgba(212,175,55,0.3), transparent)' }} />
-              </motion.div>
-
-              {/* Faint pulsing radar sweep */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 0.15, 0], rotate: [0, 360] }}
-                transition={{ opacity: { duration: 3, repeat: Infinity }, rotate: { duration: 3, repeat: Infinity, ease: 'linear' }, delay: 0.6 }}
-                className="absolute inset-[10px] rounded-full"
-                style={{ background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212,175,55,0.15) 40deg, transparent 80deg)' }}
-              />
-            </div>
-
-            {/* ── OSIRIS title — letter-by-letter stagger ── */}
-            <div className="flex items-center gap-[2px] mb-3 z-[2]">
-              {'OSIRIS'.split('').map((letter, i) => (
-                <motion.span
-                  key={i}
-                  initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.5 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
-                  className="text-4xl md:text-5xl font-bold tracking-[0.5em] font-mono"
-                  style={{ color: 'var(--text-heading)', textShadow: '0 0 30px rgba(212,175,55,0.2)' }}
-                >
-                  {letter}
-                </motion.span>
-              ))}
-            </div>
-
-            {/* ── Subtitle — typewriter reveal ── */}
-            <div className="overflow-hidden mb-8 z-[2]">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: '100%' }}
-                transition={{ delay: 1.2, duration: 0.8, ease: 'easeInOut' }}
-                className="overflow-hidden whitespace-nowrap"
-              >
-                <p className="text-[10px] md:text-[11px] font-mono tracking-[0.5em] text-[var(--gold-primary)]" style={{ opacity: 0.8 }}>
-                  GLOBAL INTELLIGENCE PLATFORM
-                </p>
-              </motion.div>
-            </div>
-
-            {/* ── Multi-stage progress bar ── */}
-            <div className="w-64 md:w-80 z-[2]">
-              {/* Thin progress track */}
-              <div className="relative w-full h-[2px] rounded-full overflow-hidden" style={{ background: 'rgba(212,175,55,0.1)' }}>
-                <motion.div
-                  initial={{ width: '0%' }}
-                  animate={{ width: ['0%', '25%', '50%', '78%', '100%'] }}
-                  transition={{ duration: 2.2, delay: 0.5, times: [0, 0.25, 0.5, 0.75, 1], ease: 'easeInOut' }}
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{ background: 'linear-gradient(90deg, var(--gold-primary), var(--cyan-primary), var(--gold-primary))', boxShadow: '0 0 12px rgba(212,175,55,0.4)' }}
-                />
-              </div>
-
-              {/* Status messages — cycling */}
-              <div className="mt-3 h-4 flex items-center justify-center">
-                {[
-                  { text: 'ESTABLISHING SECURE CONNECTION...', delay: 0.5 },
-                  { text: 'INITIALIZING FEEDS...', delay: 1.1 },
-                  { text: 'CALIBRATING SENSORS...', delay: 1.7 },
-                  { text: 'SYSTEM READY', delay: 2.2 },
-                ].map((stage, i) => (
-                  <motion.span
-                    key={i}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0, 1, 1, 0] }}
-                    transition={{ delay: stage.delay, duration: 0.6, times: [0, 0.1, 0.7, 1] }}
-                    className="absolute text-[9px] font-mono tracking-[0.25em]"
-                    style={{ color: i === 3 ? 'var(--cyan-primary)' : 'var(--text-muted)' }}
-                  >
-                    {stage.text}
-                  </motion.span>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Decorative grid lines ── */}
-            <div className="absolute inset-0 pointer-events-none z-[0]" style={{ opacity: 0.03 }}>
-              <div className="absolute inset-0" style={{
-                backgroundImage: 'linear-gradient(rgba(212,175,55,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,0.5) 1px, transparent 1px)',
-                backgroundSize: '60px 60px',
-              }} />
-            </div>
-
-            {/* ── Corner frame accents ── */}
-            {[
-              { t: '10px', l: '10px', bw: '2px 0 0 2px' },
-              { t: '10px', r: '10px', bw: '2px 2px 0 0' },
-              { b: '10px', l: '10px', bw: '0 0 2px 2px' },
-              { b: '10px', r: '10px', bw: '0 2px 2px 0' },
-            ].map((pos, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.3 }}
-                transition={{ delay: 0.8 + i * 0.1, duration: 0.5 }}
-                className="absolute w-8 h-8 z-[2]"
-                style={{ top: pos.t, bottom: pos.b, left: pos.l, right: pos.r, borderWidth: pos.bw, borderStyle: 'solid', borderColor: 'var(--gold-primary)' }}
-              />
-            ))}
-
-
-
-            {/* ── Inline keyframe for scanline drift ── */}
-
-          </motion.div>
-        )}
+        {showSplash && <SplashScreen />}
       </AnimatePresence>
-
-
 
       {/* ── MAP ── */}
       <ErrorBoundary name="Map">
@@ -775,6 +707,7 @@ export default function Dashboard() {
           sweepData={sweepData}
           scanTargets={scanTargets}
           demoMode={demoMode}
+          spin={globeSpin}
           theme={osirisTheme}
         />
       </ErrorBoundary>
@@ -815,6 +748,30 @@ export default function Dashboard() {
           )}
           <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[var(--text-muted)] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity glass-panel px-2 py-1 z-[300]">
             {mapStyle === 'dark' ? 'SATELLITE' : 'NIGHT MODE'}
+          </span>
+        </button>
+
+        {/* PYTHIA — Globe Spin Toggle */}
+        <button
+          onClick={() => setGlobeSpin(s => !s)}
+          className="glass-panel p-3.5 pointer-events-auto hover:border-[var(--gold-primary)]/40 transition-colors group relative"
+          title={globeSpin ? 'Stop globe spin' : 'Spin the globe'}
+        >
+          <RotateCw className={`w-5 h-5 group-hover:scale-110 transition-transform ${globeSpin ? 'text-[var(--gold-primary)]' : 'text-[var(--text-muted)]'}`} />
+          <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[var(--text-muted)] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity glass-panel px-2 py-1 z-[300]">
+            {globeSpin ? 'STOP SPIN' : 'SPIN GLOBE'}
+          </span>
+        </button>
+
+        {/* PYTHIA — Light / Dark Theme Toggle (persisted to localStorage as pythia-theme) */}
+        <button
+          onClick={() => setOsirisTheme(t => t === 'light' ? 'core' : 'light')}
+          className="glass-panel p-3.5 pointer-events-auto hover:border-[var(--gold-primary)]/40 transition-colors group relative"
+          title={osirisTheme === 'light' ? 'Dark theme' : 'Light theme'}
+        >
+          <Sun className={`w-5 h-5 group-hover:scale-110 transition-transform ${osirisTheme === 'light' ? 'text-[var(--gold-primary)]' : 'text-[var(--text-muted)]'}`} />
+          <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[var(--text-muted)] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity glass-panel px-2 py-1 z-[300]">
+            {osirisTheme === 'light' ? 'DARK MODE' : 'LIGHT MODE'}
           </span>
         </button>
 
@@ -868,6 +825,20 @@ export default function Dashboard() {
         </a>
       </motion.div>
 
+      {/* ── PYTHIA — top-right status (engine · Osiris · Ollama dots + model picker) + credits ── */}
+      {!isMobile && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3.2 }} className="absolute top-12 right-6 z-[210] pointer-events-none flex items-start gap-2">
+          <button
+            onClick={() => setShowCredits(true)}
+            title="Credits — the projects PYTHIA is built on"
+            className="pointer-events-auto glass-panel p-1.5 text-[var(--text-muted)] hover:text-[var(--gold-primary)] transition-colors"
+          >
+            <Info className="w-3 h-3" />
+          </button>
+          <PythiaStatus />
+        </motion.div>
+      )}
+
       {/* ── MOBILE: Compact top status ── */}
       {isMobile && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.5 }} className="absolute top-3 right-3 z-[200] pointer-events-auto flex items-center gap-2">
@@ -890,12 +861,26 @@ export default function Dashboard() {
 
 
       {/* ── NEW SIDEBAR (Root Level) ── */}
-      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setOsirisTheme} />}
+      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />}
 
 
 
       {/* ── RIGHT TOOL STRIP (desktop only — mobile uses bottom nav) ── */}
       {!isMobile && <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-[250] pointer-events-auto bg-black/40 backdrop-blur-sm p-1 rounded-full border border-white/5">
+        {/* PYTHIA — Layers toggle (left Layers bar defaults off) */}
+        <div className="relative group">
+          <button onClick={() => setShowLayers(!showLayers)} title="Layers" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showLayers ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`}>
+            <Layers className={`w-4 h-4 ${showLayers ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
+          </button>
+        </div>
+
+        {/* PYTHIA — Chat with the oracle (opens a floating window) */}
+        <div className="relative group">
+          <button onClick={openChatWindow} title="Chat with the oracle" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${floatWins.some(w => w.kind === 'chat') ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`}>
+            <MessageSquare className={`w-4 h-4 ${floatWins.some(w => w.kind === 'chat') ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
+          </button>
+        </div>
+
         <div className="relative group">
           <button onClick={() => { setShowIntel(!showIntel); setShowMarkets(false); setShowAlerts(false); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showIntel ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`}>
             <Radar className={`w-4 h-4 ${showIntel ? 'text-[var(--cyan-primary)]' : 'text-white/60'}`} />
@@ -904,7 +889,7 @@ export default function Dashboard() {
           <AnimatePresence>
             {showIntel && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <OsintPanel theme={osirisTheme} setTheme={setOsirisTheme} onSweepVisualize={setSweepData} onScanGeolocate={(target, data) => {
+                <OsintPanel onSweepVisualize={setSweepData} onScanGeolocate={(target, data) => {
                   setScanTargets(prev => {
                     const existing = prev.filter(t => t.id !== target);
                     return [{ id: target, timestamp: Date.now(), ...data }, ...existing].slice(0, 10);
@@ -934,14 +919,21 @@ export default function Dashboard() {
           <button onClick={() => { setShowAlerts(!showAlerts); setShowIntel(false); setShowMarkets(false); setShowEntityGraph(false); }} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showAlerts ? 'bg-[#FF3D3D]/20' : 'hover:bg-white/10'}`}>
             <AlertTriangle className={`w-4 h-4 ${showAlerts ? 'text-[#FF3D3D]' : 'text-white/60'}`} />
           </button>
-          {/* Alerts Panel Slideout */}
+          {/* Alerts Panel Slideout — news feeds route to floating windows */}
           <AnimatePresence>
             {showAlerts && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <LiveAlerts data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => { setLiveFeedUrl(url); setLiveFeedName(name); }} />
+                <LiveAlerts data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => openFeedWindow(url, name)} />
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+
+        {/* PYTHIA — the oracle deck (Eye) */}
+        <div className="relative group">
+          <button onClick={() => setShowPythia(p => !p)} title="PYTHIA — the oracle deck" className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showPythia ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`}>
+            <Eye className={`w-4 h-4 ${showPythia ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
+          </button>
         </div>
 
         <div className="relative group">
@@ -965,6 +957,35 @@ export default function Dashboard() {
 
 
       </div>}
+
+      {/* ── PYTHIA — the oracle deck (desktop, right side) ── */}
+      {!isMobile && showPythia && (
+        <div className="absolute right-14 top-24 z-[240] w-[380px] pointer-events-none">
+          <PythiaPanel onLocate={(lat, lng) => setFlyToLocation({ lat, lng, zoom: 5, ts: Date.now() })} />
+        </div>
+      )}
+
+      {/* ── PYTHIA — floating windows (oracle chat + news feeds) ── */}
+      {floatWins.map((w, i) => (
+        <FloatingWindow
+          key={w.id}
+          title={w.title}
+          icon={w.kind === 'chat' ? <Eye className="w-3 h-3 text-[var(--gold-primary)]" /> : <Play className="w-3 h-3 text-[var(--alert-red)]" />}
+          initial={w.kind === 'chat'
+            ? { x: 80 + i * 24, y: 120 + i * 24, w: 380, h: 460 }
+            : { x: 140 + i * 24, y: 100 + i * 24, w: 560, h: 360 }}
+          z={w.z}
+          onClose={() => closeWin(w.id)}
+          onFocus={() => focusWin(w.id)}
+        >
+          {w.kind === 'chat'
+            ? <ChatBox />
+            : <iframe src={w.url} className="w-full h-full" allow="autoplay; encrypted-media" allowFullScreen />}
+        </FloatingWindow>
+      ))}
+
+      {/* ── PYTHIA — credits ── */}
+      <CreditsModal open={showCredits} onClose={() => setShowCredits(false)} />
 
       {/* ── LIVE FEED VIEWER OVERLAY ── */}
       <AnimatePresence>
@@ -1073,6 +1094,7 @@ export default function Dashboard() {
                 { id: 'layers' as const, icon: Layers, label: 'LAYERS' },
                 { id: 'markets' as const, icon: BarChart3, label: 'MARKETS' },
                 { id: 'intel' as const, icon: Newspaper, label: 'INTEL' },
+                { id: 'alerts' as const, icon: AlertTriangle, label: 'ALERTS' },
                 { id: 'recon' as const, icon: Radar, label: 'RECON' },
                 { id: 'search' as const, icon: Search, label: 'SEARCH' },
               ].map(tab => (
@@ -1098,7 +1120,7 @@ export default function Dashboard() {
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="hud-text text-[9px] text-[var(--text-primary)]">
-                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
+                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'alerts' ? 'LIVE ALERTS' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
                     </span>
                     <button onClick={() => setMobilePanel(null)} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
@@ -1113,7 +1135,7 @@ export default function Dashboard() {
                           <div><div className="hud-label" style={{fontSize:'6px'}}>NUC</div><div className="hud-value text-[9px]" style={{color:'var(--accent-nuclear)'}}>{(data.infrastructure?.length||0)}</div></div>
                         </div>
                       </div>
-                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={osirisTheme} setTheme={setOsirisTheme} />
+                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} />
                       <div className="mt-8">
                         <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, zoom })); setMobilePanel(null); }} />
                       </div>
@@ -1121,6 +1143,7 @@ export default function Dashboard() {
                   )}
                   {mobilePanel === 'markets' && <MarketsPanel data={data} spaceWeather={spaceWeather} />}
                   {mobilePanel === 'intel' && <IntelFeed data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} />}
+                  {mobilePanel === 'alerts' && <LiveAlerts data={data} onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} onWatchFeed={(url, name) => { openFeedWindow(url, name); setMobilePanel(null); }} />}
                   {mobilePanel === 'search' && (
                     <div className="space-y-2">
                       <SearchBar onLocate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, zoom, ts: Date.now() }); setMobilePanel(null); }} />
@@ -1234,6 +1257,9 @@ export default function Dashboard() {
 
       {/* ── GLOBAL STATUS TICKER (bottom) ── */}
       <GlobalStatusBar />
+
+      {/* ── PYTHIA — bottom world-headline ticker ── */}
+      <HeadlineTicker />
 
       {/* Shortcut hint */}
       <div className="desktop-only absolute bottom-[26px] right-5 z-[200] pointer-events-none text-[6px] font-mono text-[var(--text-muted)]/40 tracking-widest">

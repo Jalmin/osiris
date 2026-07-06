@@ -5,9 +5,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingUp, TrendingDown, ChevronDown, ChevronUp, BarChart3,
-  Zap, Shield, Droplets, Gem, Bitcoin, LineChart, Maximize2, Minimize2
+  Zap, Shield, Droplets, Gem, Bitcoin, LineChart, Maximize2, Minimize2, Percent
 } from 'lucide-react';
-import AiOverview from './AiOverview';
 
 interface MarketsPanelProps { data: any; spaceWeather?: any; }
 
@@ -17,7 +16,35 @@ const SECTIONS = [
   { key: 'oil', label: 'ENERGY', icon: Droplets },
   { key: 'commodities', label: 'COMMODITIES', icon: Gem },
   { key: 'crypto', label: 'CRYPTO', icon: Bitcoin },
+  { key: 'odds', label: 'ODDS', icon: Percent },
 ];
+
+// Crowd odds — real-money (Polymarket) + play-money (Manifold) probabilities of
+// future events. These are the same anchors PYTHIA's oracle reads.
+type Odd = { question: string; yes_prob: number; volume: number; url?: string; src: 'POLY' | 'MANI' };
+
+function OddRow({ o }: { o: Odd }) {
+  const pct = Math.round(o.yes_prob * 100);
+  const vol = o.volume >= 1e6 ? `$${(o.volume / 1e6).toFixed(1)}M` : o.volume >= 1e3 ? `$${Math.round(o.volume / 1e3)}K` : `$${o.volume}`;
+  const inner = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[9px] font-mono text-[var(--text-secondary)] leading-snug flex-1">{o.question}</span>
+        <span className="text-[11px] font-mono font-bold tabular-nums shrink-0 text-[var(--gold-primary)]">{pct}%<span className="text-[7px] text-[var(--text-muted)] ml-0.5">YES</span></span>
+      </div>
+      <div className="h-1 rounded-full bg-[var(--hover-accent)] mt-1 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--gold-primary)' }} />
+      </div>
+      <div className="flex items-center justify-between mt-0.5 text-[7px] font-mono text-[var(--text-muted)]">
+        <span>{o.src === 'POLY' ? 'POLYMARKET · real money' : 'MANIFOLD'}</span>
+        <span>{vol} vol</span>
+      </div>
+    </>
+  );
+  return o.url
+    ? <a href={o.url} target="_blank" rel="noreferrer" className="block py-1.5 px-2 rounded hover:bg-[var(--hover-accent)] transition-colors">{inner}</a>
+    : <div className="py-1.5 px-2 rounded">{inner}</div>;
+}
 
 function Ticker({ name, data: d }: { name: string; data: any }) {
   if (!d) return null;
@@ -43,6 +70,29 @@ export default function MarketsPanel({ data, spaceWeather }: MarketsPanelProps) 
   const [activeSection, setActiveSection] = useState('stocks');
   const markets = data.markets || {};
 
+  // Crowd odds (Polymarket + Manifold) — fetched here so the tab is always current
+  const [odds, setOdds] = useState<Odd[]>([]);
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const [pm, mf] = await Promise.all([
+          fetch('/api/polymarket').then(r => (r.ok ? r.json() : { markets: [] })).catch(() => ({ markets: [] })),
+          fetch('/api/manifold').then(r => (r.ok ? r.json() : { markets: [] })).catch(() => ({ markets: [] })),
+        ]);
+        const rows: Odd[] = [
+          ...(pm.markets || []).map((m: any) => ({ question: m.question, yes_prob: m.yes_prob, volume: m.volume || 0, url: m.url, src: 'POLY' as const })),
+          ...(mf.markets || []).map((m: any) => ({ question: m.question, yes_prob: m.yes_prob, volume: m.volume || 0, url: m.url, src: 'MANI' as const })),
+        ].filter(o => o.question && typeof o.yes_prob === 'number');
+        rows.sort((a, b) => b.volume - a.volume);
+        if (!stop && rows.length) setOdds(rows.slice(0, 30));
+      } catch { /* keep the last good list */ }
+    };
+    load();
+    const iv = setInterval(load, 180000);
+    return () => { stop = true; clearInterval(iv); };
+  }, []);
+
   // Ensure portal only renders on client
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -57,9 +107,9 @@ export default function MarketsPanel({ data, spaceWeather }: MarketsPanelProps) 
         </div>
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-[var(--alert-green)] animate-osiris-pulse" />
-          <button onClick={(e) => { e.stopPropagation(); setMaximized(!maximized); if (!expanded && !maximized) setExpanded(true); }} className="hover:text-white transition-colors" title={maximized ? "Restore" : "Maximize"}>
+          <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMaximized(!maximized); if (!expanded && !maximized) setExpanded(true); }} className="hover:text-[var(--text-primary)] transition-colors cursor-pointer" title={maximized ? "Restore" : "Maximize"}>
             {maximized ? <Minimize2 className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <Maximize2 className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
-          </button>
+          </span>
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
         </div>
       </button>
@@ -87,11 +137,6 @@ export default function MarketsPanel({ data, spaceWeather }: MarketsPanelProps) 
               </div>
             )}
 
-            {/* One-click AI overview of the current market picture */}
-            <div className="mb-2">
-              <AiOverview mode="markets" payload={{ markets, spaceWeather }} accent="#D4AF37" />
-            </div>
-
             {/* Section Tabs — icons instead of emojis */}
             <div className="flex gap-0.5 mb-2 overflow-x-auto">
               {SECTIONS.map(s => {
@@ -117,13 +162,23 @@ export default function MarketsPanel({ data, spaceWeather }: MarketsPanelProps) 
               </div>
             )}
 
-            {/* Ticker List */}
+            {/* Ticker List / Crowd odds */}
             <div className="space-y-0.5 overflow-y-auto styled-scrollbar mt-2">
-              {markets[activeSection] && Object.entries(markets[activeSection]).map(([name, d]) => (
-                <Ticker key={name} name={name} data={d} />
-              ))}
-              {(!markets[activeSection] || Object.keys(markets[activeSection]).length === 0) && (
-                <div className="text-center py-3 text-[10px] font-mono text-[var(--text-muted)]">Loading {activeSection}...</div>
+              {activeSection === 'odds' ? (
+                odds.length ? (
+                  odds.map((o, i) => <OddRow key={`${o.src}-${i}`} o={o} />)
+                ) : (
+                  <div className="text-center py-3 text-[10px] font-mono text-[var(--text-muted)]">Reading the betting markets…</div>
+                )
+              ) : (
+                <>
+                  {markets[activeSection] && Object.entries(markets[activeSection]).map(([name, d]) => (
+                    <Ticker key={name} name={name} data={d} />
+                  ))}
+                  {(!markets[activeSection] || Object.keys(markets[activeSection]).length === 0) && (
+                    <div className="text-center py-3 text-[10px] font-mono text-[var(--text-muted)]">Loading {activeSection}...</div>
+                  )}
+                </>
               )}
             </div>
           </motion.div>
