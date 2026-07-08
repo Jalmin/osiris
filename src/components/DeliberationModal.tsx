@@ -75,22 +75,23 @@ export default function DeliberationModal({ prediction, onClose, onLocate }: {
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-3 mb-3">
+              {/* T24 contraste — tailles +2, fonds de cartes opaques via tokens */}
               <div className="flex items-center gap-1.5">
                 <Hexagon className="w-3.5 h-3.5" style={{ color: 'var(--gold-primary)' }} />
-                <span className="pythia-display text-[11px] tracking-[0.22em] text-[var(--gold-primary)]">MIROFISH SWARM</span>
-                <span className="text-[8px] font-mono text-[var(--text-muted)] tracking-widest">· DELIBERATION</span>
+                <span className="pythia-display text-[13px] tracking-[0.22em] text-[var(--gold-primary)]">MIROFISH SWARM</span>
+                <span className="text-[10px] font-mono text-[var(--text-secondary)] tracking-widest">· DELIBERATION</span>
               </div>
               <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] -mt-1 -mr-1 p-1"><X className="w-4 h-4" /></button>
             </div>
 
             {/* Statement */}
             <div className="mb-3">
-              <span className="text-[8px] font-mono tracking-widest" style={{ color }}>{HORIZON_LABEL[p.horizon] || p.horizon}</span>
-              <p className="text-[13px] text-[var(--text-primary)] leading-snug mt-1">{p.statement}</p>
+              <span className="text-[10px] font-mono tracking-widest" style={{ color }}>{HORIZON_LABEL[p.horizon] || p.horizon}</span>
+              <p className="text-[15px] text-[var(--text-primary)] leading-normal mt-1">{p.statement}</p>
             </div>
 
             {/* Consensus gauge */}
-            <div className="flex items-center gap-3 rounded-xl border border-[var(--border-secondary)] p-3 mb-3" style={{ background: 'rgba(255,255,255,.02)' }}>
+            <div className="flex items-center gap-3 rounded-xl border border-[var(--border-secondary)] p-3 mb-3" style={{ background: 'var(--bg-card)' }}>
               <svg viewBox="0 0 200 112" className="w-[140px] shrink-0">
                 <path d={arc(1)} fill="none" stroke="var(--border-primary)" strokeWidth="12" strokeLinecap="round" />
                 <path d={arc(Math.min(1, Math.max(0, consensus / 100)))} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round" />
@@ -100,23 +101,23 @@ export default function DeliberationModal({ prediction, onClose, onLocate }: {
               <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                 <div className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: agreeColor }} />
-                  <span className="text-[10px] font-mono font-bold" style={{ color: agreeColor }}>{agreement}</span>
-                  <span className="text-[8px] font-mono text-[var(--text-muted)]">· {spread}pt spread · {agents.length} voices</span>
+                  <span className="text-[12px] font-mono font-bold" style={{ color: agreeColor }}>{agreement}</span>
+                  <span className="text-[10px] font-mono text-[var(--text-secondary)]">· {spread}pt spread · {agents.length} voices</span>
                 </div>
                 {delta != null && (
-                  <div className="text-[9px] font-mono text-[var(--text-secondary)] flex items-center gap-1">
+                  <div className="text-[11px] font-mono text-[var(--text-secondary)] flex items-center gap-1">
                     oracle {base}% {delta === 0 ? '·' : delta > 0 ? <TrendingUp className="w-3 h-3" style={{ color: 'var(--cyan-primary)' }} /> : <TrendingDown className="w-3 h-3" style={{ color: 'var(--alert-red)' }} />} swarm {consensus}%
                     {delta !== 0 && <span style={{ color: delta > 0 ? 'var(--cyan-primary)' : 'var(--alert-red)' }}>({delta > 0 ? '+' : ''}{delta})</span>}
                   </div>
                 )}
-                {p.reasoning && <p className="text-[9px] font-mono text-[var(--text-muted)] leading-relaxed">{p.reasoning}</p>}
+                {p.reasoning && <p className="text-[11px] font-mono text-[var(--text-secondary)] leading-relaxed">{p.reasoning}</p>}
               </div>
             </div>
 
             {/* Agreement spectrum */}
             {agents.length > 0 && (
               <div className="mb-3">
-                <div className="text-[8px] font-mono tracking-widest text-[var(--text-muted)] mb-2">WHERE THE COUNCIL LANDED</div>
+                <div className="text-[10px] font-mono tracking-widest text-[var(--text-secondary)] mb-2">WHERE THE COUNCIL LANDED</div>
                 <svg viewBox="0 0 300 46" className="w-full">
                   <line x1="10" y1="30" x2="290" y2="30" stroke="var(--border-primary)" strokeWidth="1" />
                   {[0, 25, 50, 75, 100].map((t) => (
@@ -141,37 +142,37 @@ export default function DeliberationModal({ prediction, onClose, onLocate }: {
             {/* The council */}
             {agents.length > 0 ? (
               <div className="flex flex-col gap-2 mb-3">
-                <div className="text-[8px] font-mono tracking-widest text-[var(--text-muted)]">THE COUNCIL</div>
+                <div className="text-[10px] font-mono tracking-widest text-[var(--text-secondary)]">THE COUNCIL</div>
                 {agents.map((a) => {
                   const m = AGENT_META[a.name] || { color: 'var(--text-secondary)', lens: '' };
                   const pct = Math.round(a.probability * 100);
                   return (
-                    <div key={a.name} className="rounded-lg border border-[var(--border-secondary)] p-2" style={{ background: 'rgba(255,255,255,.02)' }}>
+                    <div key={a.name} className="rounded-lg border border-[var(--border-secondary)] p-2" style={{ background: 'var(--bg-card)' }}>
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Hexagon className="w-3 h-3 shrink-0" style={{ color: m.color }} />
-                          <span className="text-[10px] font-bold" style={{ color: m.color }}>{a.name}</span>
-                          <span className="text-[7px] font-mono text-[var(--text-muted)] truncate">{m.lens}</span>
+                          <span className="text-[12px] font-bold" style={{ color: m.color }}>{a.name}</span>
+                          <span className="text-[9px] font-mono text-[var(--text-secondary)] truncate">{m.lens}</span>
                           {a.model && (
-                            <span className="text-[7px] font-mono shrink-0 px-1 py-[1px] rounded truncate max-w-[92px]"
+                            <span className="text-[9px] font-mono shrink-0 px-1 py-[1px] rounded truncate max-w-[92px]"
                               title={`this vote was cast by ${a.model}`}
-                              style={{ background: 'rgba(255,255,255,.05)', color: 'var(--text-muted)', border: '1px solid var(--border-secondary)' }}>
+                              style={{ background: 'var(--chip-neutral-bg)', color: 'var(--text-secondary)', border: '1px solid var(--border-secondary)' }}>
                               {a.model}
                             </span>
                           )}
                         </div>
-                        <span className="text-[11px] font-mono font-bold shrink-0" style={{ color: m.color }}>{pct}%</span>
+                        <span className="text-[13px] font-mono font-bold shrink-0" style={{ color: m.color }}>{pct}%</span>
                       </div>
                       <div className="h-1 rounded-full bg-[var(--hover-accent)] overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: m.color }} />
                       </div>
-                      {a.note && <p className="text-[8px] font-mono text-[var(--text-secondary)] mt-1 leading-relaxed">“{a.note}”</p>}
+                      {a.note && <p className="text-[10px] font-mono text-[var(--text-secondary)] mt-1 leading-relaxed">“{a.note}”</p>}
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="text-[9px] font-mono text-[var(--text-muted)] text-center py-3 mb-2">
+              <div className="text-[11px] font-mono text-[var(--text-secondary)] text-center py-3 mb-2">
                 The swarm didn’t deliberate this forecast this pass.<br />Switch to a larger model for full council coverage.
               </div>
             )}
@@ -179,12 +180,12 @@ export default function DeliberationModal({ prediction, onClose, onLocate }: {
             {/* Location */}
             {p.location && (
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-secondary)]">
-                <span className="text-[9px] font-mono flex items-center gap-1" style={{ color }}><MapPin className="w-3 h-3" /> {p.location}</span>
+                <span className="text-[11px] font-mono flex items-center gap-1" style={{ color }}><MapPin className="w-3 h-3" /> {p.location}</span>
                 {p.lat != null && p.lng != null && (
                   <button
                     onClick={() => { onLocate?.(p.lat as number, p.lng as number); onClose(); }}
-                    className="text-[8px] font-mono px-2 py-1 rounded transition-colors hover:brightness-125"
-                    style={{ background: 'rgba(154,123,255,.18)', color: 'var(--gold-primary)' }}
+                    className="text-[10px] font-mono px-2 py-1 rounded transition-colors hover:brightness-125"
+                    style={{ background: 'var(--chip-accent-bg)', color: 'var(--gold-primary)' }}
                   >fly to on globe →</button>
                 )}
               </div>

@@ -35,7 +35,7 @@ export default function HeadlineTicker() {
         <span key={(n.id || '') + i} className="inline-flex items-center gap-2 mx-6">
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dot(n.risk_score) }} />
           <span className="text-[var(--text-primary)] font-semibold">{n.title}</span>
-          {n.source && <span className="text-[var(--text-muted)] text-[9px] uppercase tracking-wider">· {n.source}</span>}
+          {n.source && <span className="text-[var(--text-secondary)] text-[11px] uppercase tracking-wider">· {n.source}</span>}
         </span>
       ))}
     </>
@@ -43,10 +43,11 @@ export default function HeadlineTicker() {
 
   return (
     <div className="hidden md:block absolute bottom-0 left-0 right-0 z-[199] pointer-events-none">
-      <div className="pythia-ticker-bg h-[30px] overflow-hidden bg-black/90 border-t border-[var(--gold-primary)]/45 flex items-center text-[12px] backdrop-blur-md" style={{ boxShadow: '0 -6px 24px rgba(154,123,255,0.14)' }}>
-        <div className="pythia-ticker-bg flex-shrink-0 px-3 h-full flex items-center gap-1.5 border-r border-[var(--gold-primary)]/40 bg-black relative z-10 shadow-[4px_0_10px_rgba(0,0,0,0.5)]">
+      {/* T24 contraste — ticker +2 crans, fond opaque, bordures franches */}
+      <div className="pythia-ticker-bg h-[34px] overflow-hidden border-t border-[var(--gold-primary)]/70 flex items-center text-[14px] backdrop-blur-md" style={{ boxShadow: '0 -6px 24px rgba(154,123,255,0.14)' }}>
+        <div className="pythia-ticker-bg flex-shrink-0 px-3 h-full flex items-center gap-1.5 border-r border-[var(--gold-primary)]/70 bg-black relative z-10 shadow-[4px_0_10px_rgba(0,0,0,0.5)]">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--alert-red)] animate-pulse" />
-          <span className="pythia-display text-[10px] font-bold tracking-[0.25em] text-[var(--gold-primary)]">WORLD</span>
+          <span className="pythia-display text-[12px] font-bold tracking-[0.25em] text-[var(--gold-primary)]">WORLD</span>
         </div>
         <div className="flex-1 overflow-hidden relative" style={{ maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}>
           <div className="flex items-center whitespace-nowrap animate-ticker" style={{ animationDuration: '140s' }}>
