@@ -13,12 +13,20 @@ import { NextResponse } from 'next/server';
  * tickers ending in F = foreign ordinary, Y = ADR).
  *
  * There is NO market-cap / size field in this endpoint, so "big cap" cannot be
- * filtered directly. We approximate a clean US-listed universe with a symbol
- * heuristic:
- *   - keep only `^[A-Z]{1,5}$` (pure alpha, 1-5 chars, no dot suffix, no digits)
- *   - drop 5-letter symbols ending in F or Y (classic OTC/ADR convention)
- * This keeps NYSE/Nasdaq listings (incl. megacaps like GOOGL) while cutting the
- * foreign + pink-sheet noise. Documented as a heuristic, not a guarantee.
+ * filtered directly. Two-stage filter:
+ *   1. GUARD-RAIL heuristic (kept as defense-in-depth):
+ *      - keep only `^[A-Z]{1,5}$` (pure alpha, 1-5 chars, no dot suffix, no digits)
+ *      - drop 5-letter symbols ending in F or Y (classic OTC/ADR convention)
+ *   2. ALLOWLIST (the real filter): keep only tickers in `MAJOR_TICKERS`, a
+ *      hand-curated static set of ~120 US mega/large caps (S&P 100 + notable
+ *      megacaps). This is the substantive gate: the Pythia engine should only
+ *      bet on earnings that move the broad market (NVDA, AAPL, JPM...), not the
+ *      ~800 small/mid caps the clean-ticker heuristic alone lets through.
+ *
+ * MAJOR_TICKERS is a CURATED STATIC LIST, maintained by hand (assumed): FMP
+ * exposes no size field, so membership is the pragmatic proxy for "market-moving".
+ * BRK.B is intentionally EXCLUDED: its dash-form symbol (BRK-B) cannot pass the
+ * `^[A-Z]{1,5}$` guard-rail, and its EPS is low-salience as a mover.
  *
  * Output contract for the Pythia engine:
  *   [{ title, description, url, date, risk_score }]
@@ -37,6 +45,37 @@ const RISK_SCORE_EARNINGS = 70;
 const CLEAN_TICKER = /^[A-Z]{1,5}$/;
 // OTC/ADR pink-sheet convention: 5-letter ending in F (foreign) or Y (ADR).
 const OTC_SUFFIX = /^[A-Z]{4}[FY]$/;
+
+/**
+ * MAJOR_TICKERS — curated static allowlist of US mega/large caps whose earnings
+ * actually move the broad market. S&P 100 constituents + a handful of notable
+ * megacaps. Maintained BY HAND (FMP has no market-cap field to derive this).
+ * BRK.B excluded on purpose (dash symbol fails the clean-ticker guard-rail).
+ */
+const MAJOR_TICKERS: Set<string> = new Set([
+  // Mega-cap tech / communication
+  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'GOOG', 'AMZN', 'META', 'TSLA', 'AVGO',
+  'ORCL', 'CRM', 'ADBE', 'AMD', 'INTC', 'CSCO', 'QCOM', 'TXN', 'IBM', 'NOW',
+  'INTU', 'ACN', 'MU', 'AMAT', 'ADI', 'LRCX', 'PANW', 'ANET', 'PYPL',
+  // Communication services / media
+  'NFLX', 'CMCSA', 'DIS', 'T', 'VZ', 'TMUS', 'CHTR',
+  // Financials
+  'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'C', 'AXP', 'BLK', 'SCHW',
+  'SPGI', 'BK', 'USB', 'COF', 'MET', 'AIG', 'PNC',
+  // Healthcare
+  'UNH', 'JNJ', 'LLY', 'PFE', 'MRK', 'ABBV', 'TMO', 'ABT', 'DHR', 'AMGN',
+  'GILD', 'BMY', 'CVS', 'MDT', 'SYK', 'ISRG', 'ELV', 'VRTX', 'REGN',
+  // Energy
+  'XOM', 'CVX', 'COP', 'SLB', 'EOG',
+  // Consumer staples / discretionary
+  'WMT', 'COST', 'HD', 'PG', 'KO', 'PEP', 'MCD', 'NKE', 'SBUX', 'LOW',
+  'TGT', 'PM', 'MO', 'MDLZ', 'CL', 'KHC', 'BKNG', 'GM', 'F',
+  // Industrials
+  'BA', 'CAT', 'GE', 'HON', 'UPS', 'RTX', 'LMT', 'DE', 'GD', 'MMM', 'FDX',
+  'UNP', 'EMR',
+  // Utilities / materials / real estate
+  'NEE', 'DUK', 'SO', 'LIN', 'DOW', 'PLD', 'AMT', 'SPG',
+]);
 
 interface FmpEarning {
   symbol: string;
@@ -82,6 +121,16 @@ function isCleanUsTicker(symbol: string): boolean {
   return CLEAN_TICKER.test(symbol) && !OTC_SUFFIX.test(symbol);
 }
 
+/**
+ * True only for hand-curated US mega/large caps. Guard-rail heuristic first
+ * (defense-in-depth), then the allowlist membership test (the real gate).
+ */
+function isMajorTicker(symbol: string): boolean {
+  if (!symbol) return false;
+  const normalized = symbol.toUpperCase().trim();
+  return isCleanUsTicker(normalized) && MAJOR_TICKERS.has(normalized);
+}
+
 export async function GET() {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) {
@@ -104,7 +153,7 @@ export async function GET() {
     if (!Array.isArray(data)) return NextResponse.json([]);
 
     const events: EngineEvent[] = data
-      .filter((e) => isCleanUsTicker(e.symbol))
+      .filter((e) => isMajorTicker(e.symbol))
       .map((e) => ({
         title: `${e.symbol} earnings (${e.date})`,
         description: buildDescription(e),
